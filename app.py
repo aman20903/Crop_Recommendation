@@ -1,56 +1,89 @@
-from flask import Flask,request,render_template
+from flask import Flask, request, render_template
 import numpy as np
-import pandas
-import sklearn
 import pickle
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
-from sklearn.tree import DecisionTreeClassifier
+import pandas as pd
 
+# Load model and scaler
+model = pickle.load(open('model.pkl', 'rb'))
+scaler = pickle.load(open('scaler.pkl', 'rb'))
 
-# importing model
-model = pickle.load(open('model.pkl','rb'))
-sc = pickle.load(open('standscaler.pkl','rb'))
-ms = pickle.load(open('minmaxscaler.pkl','rb'))
-
-# creating flask app
 app = Flask(__name__, template_folder='templates')
 
 @app.route('/')
 def index():
     return render_template("index.html")
 
-@app.route("/predict",methods=['POST'])
+@app.route("/predict", methods=['POST'])
 def predict():
-    N = request.form['Nitrogen']
-    P = request.form['Phosporus']
-    K = request.form['Potassium']
-    temp = request.form['Temperature']
-    humidity = request.form['Humidity']
-    ph = request.form['Ph']
-    rainfall = request.form['Rainfall']
+    try:
+        # Retrieve and convert form data to float
+        N = float(request.form['Nitrogen'])
+        P = float(request.form['Phosporus'])
+        K = float(request.form['Potassium'])
+        temperature = float(request.form['Temperature'])
+        humidity = float(request.form['Humidity'])
+        ph = float(request.form['Ph'])
+        rainfall = float(request.form['Rainfall'])
 
-    feature_list = [N, P, K, temp, humidity, ph, rainfall]
-    single_pred = np.array(feature_list).reshape(1, -1)
+        # Input validation with detailed messages
+        validation_errors = []
+        
+        if not (0 <= ph <= 14):
+            validation_errors.append("pH must be between 0 and 14")
+        
+        if temperature < -20 or temperature > 60:
+            validation_errors.append("Temperature must be between -20°C and 60°C")
+        
+        if humidity < 0 or humidity > 100:
+            validation_errors.append("Humidity must be between 0% and 100%")
+        
+        if rainfall < 0:
+            validation_errors.append("Rainfall cannot be negative")
+            
+        if N < 0:
+            validation_errors.append("Nitrogen content cannot be negative")
+            
+        if P < 0:
+            validation_errors.append("Phosphorus content cannot be negative")
+            
+        if K < 0:
+            validation_errors.append("Potassium content cannot be negative")
 
-    scaled_features = ms.transform(single_pred)
-    final_features = sc.transform(scaled_features)
-    prediction = model.predict(final_features)
+        # If there are any validation errors, return them
+        if validation_errors:
+            return render_template('index.html', result="Error: " + "; ".join(validation_errors))
 
-    crop_dict = {1: "Rice", 2: "Maize", 3: "Jute", 4: "Cotton", 5: "Coconut", 6: "Papaya", 7: "Orange",
-                 8: "Apple", 9: "Muskmelon", 10: "Watermelon", 11: "Grapes", 12: "Mango", 13: "Banana",
-                 14: "Pomegranate", 15: "Lentil", 16: "Blackgram", 17: "Mungbean", 18: "Mothbeans",
-                 19: "Pigeonpeas", 20: "Kidneybeans", 21: "Chickpea", 22: "Coffee"}
+        # Create feature array and scale it
+        features = np.array([[N, P, K, temperature, humidity, ph, rainfall]])
+        scaled_features = scaler.transform(features)
+        
+        # Predict with the model
+        prediction = model.predict(scaled_features)
 
-    if prediction[0] in crop_dict:
-        crop = crop_dict[prediction[0]]
-        result = "{} is the best crop to be cultivated right there".format(crop)
-    else:
-        result = "Sorry, we could not determine the best crop to be cultivated with the provided data."
-    return render_template('index.html',result = result)
+        # Map prediction to crop name
+        crop_dict = {
+            1: "Rice", 2: "Maize", 3: "Jute", 4: "Cotton", 5: "Coconut",
+            6: "Papaya", 7: "Orange", 8: "Apple", 9: "Muskmelon", 10: "Watermelon",
+            11: "Grapes", 12: "Mango", 13: "Banana", 14: "Pomegranate", 15: "Lentil",
+            16: "Blackgram", 17: "Mungbean", 18: "Mothbeans", 19: "Pigeonpeas",
+            20: "Kidneybeans", 21: "Chickpea", 22: "Coffee"
+        }
 
+        if prediction[0] in crop_dict:
+            crop = crop_dict[prediction[0]]
+            result = f"{crop} is the best crop to be cultivated right there."
+            
+            # Add input values to the result for verification
+            
+        else:
+            result = "Sorry, we could not determine the best crop to be cultivated with the provided data."
+            
+    except ValueError as ve:
+        result = f"Error: Please ensure all inputs are valid numbers"
+    except Exception as e:
+        result = f"Error: An unexpected error occurred - {str(e)}"
 
+    return render_template('index.html', result=result)
 
-
-# python main
 if __name__ == "__main__":
     app.run(debug=True)
